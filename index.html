@@ -56,13 +56,66 @@
     }
 
     async function init() {
-      try {
-        await liff.init({ liffId: LIFF_ID });
+  try {
+    document.getElementById('loading').innerHTML = '① liff.init 開始...';
+    await liff.init({ liffId: LIFF_ID });
 
-        if (!liff.isLoggedIn()) {
-          liff.login();
-          return;
-        }
+    document.getElementById('loading').innerHTML = '② 檢查登入狀態...';
+    if (!liff.isLoggedIn()) {
+      document.getElementById('loading').innerHTML = '③ 未登入，跳轉中...';
+      liff.login();
+      return;
+    }
+
+    document.getElementById('loading').innerHTML = '④ 取得用戶資料...';
+    const profile = await liff.getProfile();
+    lineUserId = profile.userId;
+    document.getElementById('name').value = profile.displayName;
+
+    document.getElementById('loading').innerHTML = '⑤ 呼叫 GAS 取資料...';
+    const res = await fetch(SCRIPT_URL + '?action=data');
+    if (!res.ok) throw new Error('HTTP 狀態碼：' + res.status);
+
+    document.getElementById('loading').innerHTML = '⑥ 解析資料...';
+    const data = await res.json();
+
+    if (data.error) {
+      showError('試算表讀取失敗：' + data.error);
+      return;
+    }
+
+    // 以下套用資料（保持原本的程式碼不變）
+    document.getElementById('title').innerText = data.settings['店鋪名稱'] || '訂購單';
+    if (data.settings['頂部圖片']) {
+      const b = document.getElementById('banner');
+      b.style.backgroundImage = `url(${data.settings['頂部圖片']})`;
+      b.style.display = 'block';
+    }
+    const pdSel = document.getElementById('pd');
+    data.products.forEach(p => pdSel.add(new Option(p, p)));
+    fieldsData = data.fields;
+    const zone = document.getElementById('dynZone');
+    fieldsData.forEach(f => {
+      let html = `<div class="group"><label>${f.name}${f.req ? ' *' : ''}</label>`;
+      if (f.type === 'text') {
+        html += `<input name="${f.name}" ${f.req ? 'required' : ''}>`;
+      } else {
+        html += '<div class="opt-group">';
+        f.options.forEach(o => {
+          html += `<div class="opt-item"><input type="${f.type}" name="${f.name}" value="${o}" ${f.req ? 'required' : ''}> ${o}</div>`;
+        });
+        html += '</div>';
+      }
+      zone.innerHTML += html + '</div>';
+    });
+
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+
+  } catch (e) {
+    showError('錯誤發生在：' + document.getElementById('loading').innerHTML + '<br>訊息：' + e.message);
+  }
+}
 
         // 取得 LINE 用戶資料
         const profile = await liff.getProfile
