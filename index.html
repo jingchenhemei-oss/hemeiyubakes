@@ -41,9 +41,8 @@
 
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script>
-    // ★ 填入你的資訊
     const LIFF_ID = '2009988690-V5uuqIVX';
-    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwrF8MfmIJCmU24Q-sQoWCWICtts7quFb-VFwYvhWw9meQm9PLggzQUTCNUh5wHqo_X/exec'; // https://script.google.com/macros/s/xxx/exec
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwrF8MfmIJCmU24Q-sQoWCWICtts7quFb-VFwYvhWw9meQm9PLggzQUTCNUh5wHqo_X/exec';
 
     let fieldsData = [];
     let lineUserId = '';
@@ -56,67 +55,122 @@
     }
 
     async function init() {
-  try {
-    document.getElementById('loading').innerHTML = '① liff.init 開始...';
-    await liff.init({ liffId: LIFF_ID });
+      try {
+        document.getElementById('loading').innerHTML = '① liff.init 開始...';
+        await liff.init({ liffId: LIFF_ID });
 
-    document.getElementById('loading').innerHTML = '② 檢查登入狀態...';
-    if (!liff.isLoggedIn()) {
-      document.getElementById('loading').innerHTML = '③ 未登入，跳轉中...';
-      liff.login();
-      return;
-    }
+        document.getElementById('loading').innerHTML = '② 檢查登入狀態...';
+        if (!liff.isLoggedIn()) {
+          document.getElementById('loading').innerHTML = '③ 未登入，跳轉中...';
+          liff.login();
+          return;
+        }
 
-    document.getElementById('loading').innerHTML = '④ 取得用戶資料...';
-    const profile = await liff.getProfile();
-    lineUserId = profile.userId;
-    document.getElementById('name').value = profile.displayName;
+        document.getElementById('loading').innerHTML = '④ 取得用戶資料...';
+        const profile = await liff.getProfile();
+        lineUserId = profile.userId;
+        document.getElementById('name').value = profile.displayName;
 
-    document.getElementById('loading').innerHTML = '⑤ 呼叫 GAS 取資料...';
-    const res = await fetch(SCRIPT_URL + '?action=data');
-    if (!res.ok) throw new Error('HTTP 狀態碼：' + res.status);
+        document.getElementById('loading').innerHTML = '⑤ 呼叫 GAS 取資料...';
+        const res = await fetch(SCRIPT_URL + '?action=data');
+        if (!res.ok) throw new Error('HTTP 狀態碼：' + res.status);
 
-    document.getElementById('loading').innerHTML = '⑥ 解析資料...';
-    const data = await res.json();
+        document.getElementById('loading').innerHTML = '⑥ 解析資料...';
+        const data = await res.json();
 
-    if (data.error) {
-      showError('試算表讀取失敗：' + data.error);
-      return;
-    }
+        if (data.error) {
+          showError('試算表讀取失敗：' + data.error);
+          return;
+        }
 
-    // 以下套用資料（保持原本的程式碼不變）
-    document.getElementById('title').innerText = data.settings['店鋪名稱'] || '訂購單';
-    if (data.settings['頂部圖片']) {
-      const b = document.getElementById('banner');
-      b.style.backgroundImage = `url(${data.settings['頂部圖片']})`;
-      b.style.display = 'block';
-    }
-    const pdSel = document.getElementById('pd');
-    data.products.forEach(p => pdSel.add(new Option(p, p)));
-    fieldsData = data.fields;
-    const zone = document.getElementById('dynZone');
-    fieldsData.forEach(f => {
-      let html = `<div class="group"><label>${f.name}${f.req ? ' *' : ''}</label>`;
-      if (f.type === 'text') {
-        html += `<input name="${f.name}" ${f.req ? 'required' : ''}>`;
-      } else {
-        html += '<div class="opt-group">';
-        f.options.forEach(o => {
-          html += `<div class="opt-item"><input type="${f.type}" name="${f.name}" value="${o}" ${f.req ? 'required' : ''}> ${o}</div>`;
+        document.getElementById('title').innerText = data.settings['店鋪名稱'] || '訂購單';
+        if (data.settings['頂部圖片']) {
+          const b = document.getElementById('banner');
+          b.style.backgroundImage = `url(${data.settings['頂部圖片']})`;
+          b.style.display = 'block';
+        }
+
+        const pdSel = document.getElementById('pd');
+        data.products.forEach(p => pdSel.add(new Option(p, p)));
+
+        fieldsData = data.fields;
+        const zone = document.getElementById('dynZone');
+        fieldsData.forEach(f => {
+          let html = `<div class="group"><label>${f.name}${f.req ? ' *' : ''}</label>`;
+          if (f.type === 'text') {
+            html += `<input name="${f.name}" ${f.req ? 'required' : ''}>`;
+          } else {
+            html += '<div class="opt-group">';
+            f.options.forEach(o => {
+              html += `<div class="opt-item"><input type="${f.type}" name="${f.name}" value="${o}" ${f.req ? 'required' : ''}> ${o}</div>`;
+            });
+            html += '</div>';
+          }
+          zone.innerHTML += html + '</div>';
         });
-        html += '</div>';
+
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('app').style.display = 'block';
+
+      } catch (e) {
+        showError('錯誤發生在：' + document.getElementById('loading').innerHTML + '<br>訊息：' + e.message);
       }
-      zone.innerHTML += html + '</div>';
-    });
+    }
 
-    document.getElementById('loading').style.display = 'none';
-    document.getElementById('app').style.display = 'block';
+    async function submitOrder() {
+      const name = document.getElementById('name').value.trim();
+      const tel = document.getElementById('tel').value.trim();
+      if (!name || !tel) { alert('請填寫姓名與手機號碼'); return; }
+      if (!/^09\d{8}$/.test(tel)) { alert('手機號碼格式不正確'); return; }
 
-  } catch (e) {
-    showError('錯誤發生在：' + document.getElementById('loading').innerHTML + '<br>訊息：' + e.message);
-  }
-}
-        window.onload = init;
+      const btn = document.getElementById('submitBtn');
+      btn.disabled = true;
+      btn.textContent = '傳送中...';
+
+      let dynStr = '';
+      fieldsData.forEach(f => {
+        let v = '';
+        if (f.type === 'text') {
+          const el = document.getElementsByName(f.name)[0];
+          v = el ? el.value : '';
+        } else {
+          v = Array.from(document.querySelectorAll(`input[name="${f.name}"]:checked`)).map(el => el.value).join(', ');
+        }
+        dynStr += `${f.name}: ${v}\n`;
+      });
+
+      const payload = {
+        action: 'submitOrder',
+        name,
+        tel,
+        pd: document.getElementById('pd').value,
+        qty: document.getElementById('qty').value,
+        note: document.getElementById('note').value,
+        dyn: dynStr,
+        lineUserId
+      };
+
+      try {
+        const res = await fetch(SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify(payload)
+        });
+        const result = await res.json();
+        if (result.status === 'OK') {
+          alert('✅ 訂購成功！訂單確認訊息將透過 LINE 傳送給您。');
+          liff.closeWindow();
+        } else {
+          throw new Error(result.message || '未知錯誤');
+        }
+      } catch (e) {
+        alert('送出失敗：' + e.message);
+        btn.disabled = false;
+        btn.textContent = '確認送出訂單';
+      }
+    }
+
+    window.onload = init;
   </script>
 </body>
 </html>
