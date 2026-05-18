@@ -29,6 +29,9 @@
     .subtotal-box { background: #fff8f8; border-radius: 10px; padding: 12px; margin-bottom: 18px; font-size: 14px; }
     .subtotal-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
     .subtotal-total { font-weight: bold; font-size: 16px; color: #D32F2F; border-top: 1px solid #eee; padding-top: 6px; margin-top: 6px; }
+    .ship-fee-zero { color: #4CAF50; font-weight: bold; }
+    .ship-fee-original { text-decoration: line-through; color: #999; margin-right: 6px; }
+    .free-ship-tip { font-size: 12px; color: #FF9800; margin-top: 4px; text-align: right; }
     .opt-group { border: 1px solid #eee; padding: 10px; border-radius: 8px; }
     .opt-item { display: flex; align-items: center; margin: 8px 0; gap: 8px; }
     input[type="radio"], input[type="checkbox"] { width: auto; transform: scale(1.3); }
@@ -56,7 +59,7 @@
 
   <div id="maintPage">
     <img id="maintImg" src="" alt="維護中">
-    <p>系統維護中，請稍後再試。</p>
+    <p>系統維護中,請稍後再試。</p>
   </div>
 
   <div class="card" id="app">
@@ -73,11 +76,13 @@
     </div>
     <div class="subtotal-box" id="subtotalBox" style="display:none">
       <div id="subtotalItems"></div>
+      <div class="subtotal-row" id="subtotalLine"><span>商品小計</span><span id="subtotalAmt">0 元</span></div>
+      <div class="subtotal-row" id="shippingFeeLine"><span>運費</span><span id="shippingFeeAmt">0 元</span></div>
+      <div class="free-ship-tip" id="freeShipTip" style="display:none"></div>
       <div class="subtotal-row subtotal-total"><span>總金額</span><span id="totalAmt">0 元</span></div>
     </div>
     <div id="dynZone"></div>
 
-    <!-- 付款方式 -->
     <div class="group" id="paymentGroup">
       <label>💳 付款方式</label>
       <div class="opt-group" id="paymentOptions">
@@ -90,7 +95,7 @@
           <label for="pay_transfer" style="color:#333;font-weight:normal;margin:0">匯款</label>
         </div>
       </div>
-      <div id="paymentHint" class="hint">⚠️ 訂單金額超過 NT$ <span id="thresholdAmt"></span> 元，需先完成匯款。</div>
+      <div id="paymentHint" class="hint">⚠️ 訂單金額超過 NT$ <span id="thresholdAmt"></span> 元,需先完成匯款。</div>
     </div>
 
     <div class="group" id="shippingGroup">
@@ -117,10 +122,9 @@
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script>
     const LIFF_ID = '2009988690-V5uuqIVX';
-    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxft12gAyfA8J7kAO3pW2MJ5FxyxLkq1zlunS3IlK-BA1LixFT1apKmul909Bu-L-ZD/exec';
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx4fFWfeEhP1KO9WvzyJ1BYPNdmhU_THE8i8h5NgIrxyy1g0k9wxyw1T9_O-71vMpwA/exec';
 
     let fieldsData = [], productsData = [], settingsData = {}, lineUserId = '';
-    // 記錄上次是否處於「強制匯款」狀態，用於正確處理「降回門檻以下」的情境
     let wasForcedTransfer = false;
 
     function showError(msg) {
@@ -149,7 +153,7 @@
         lineUserId = profile.userId;
 
         const data = await loadJsonp(SCRIPT_URL + '?action=data');
-        if (data.error) { showError('讀取失敗：' + data.error); return; }
+        if (data.error) { showError('讀取失敗:' + data.error); return; }
 
         settingsData = data.settings;
         productsData = data.products;
@@ -218,7 +222,7 @@
         document.getElementById('loading').style.display = 'none';
         document.getElementById('app').style.display = 'block';
       } catch (e) {
-        showError('錯誤：' + e.message);
+        showError('錯誤:' + e.message);
       }
     }
 
@@ -233,42 +237,87 @@
       updateShipping();
     }
 
+    // 計算當前運費(根據選擇的運送方式)
+    function calcShippingFee(subtotal) {
+      const shipping = document.querySelector('input[name="shipping"]:checked')?.value || '';
+      if (!shipping) return { fee: 0, originalFee: 0, threshold: 0, isFree: true };
+
+      const feeKey = '運費_' + shipping;
+      const thresholdKey = '免運門檻_' + shipping;
+      const originalFee = parseInt(settingsData[feeKey]) || 0;
+      const threshold = parseInt(settingsData[thresholdKey]) || 0;
+
+      if (originalFee === 0) {
+        return { fee: 0, originalFee: 0, threshold: 0, isFree: true };
+      }
+      if (threshold > 0 && subtotal >= threshold) {
+        return { fee: 0, originalFee: originalFee, threshold: threshold, isFree: true };
+      }
+      return { fee: originalFee, originalFee: originalFee, threshold: threshold, isFree: false };
+    }
+
     function updateTotal() {
-      let total = 0, itemsHtml = '', hasItem = false;
+      let subtotal = 0, itemsHtml = '', hasItem = false;
       productsData.forEach((p, i) => {
         const qty = parseInt(document.getElementById('qty_' + i).value || 0);
         if (qty > 0) {
           hasItem = true;
           const sub = p.price * qty;
-          total += sub;
+          subtotal += sub;
           itemsHtml += `<div class="subtotal-row"><span>${p.name} x${qty}</span><span>${sub} 元</span></div>`;
         }
       });
+
+      const shippingInfo = calcShippingFee(subtotal);
+      const total = subtotal + shippingInfo.fee;
+
       document.getElementById('subtotalBox').style.display = hasItem ? 'block' : 'none';
       document.getElementById('subtotalItems').innerHTML = itemsHtml;
+      document.getElementById('subtotalAmt').innerText = subtotal + ' 元';
       document.getElementById('totalAmt').innerText = total + ' 元';
 
-      // 強制匯款判斷（P1-3 修正版）
-      const threshold = parseInt(settingsData['強制匯款門檻']) || 0;
+      // 運費顯示邏輯
+      const shippingFeeAmt = document.getElementById('shippingFeeAmt');
+      const freeShipTip = document.getElementById('freeShipTip');
+      const shipping = document.querySelector('input[name="shipping"]:checked')?.value || '';
+
+      if (shipping === '現場取貨' || shippingInfo.originalFee === 0) {
+        // 現場取貨或運費 0 的運送方式
+        shippingFeeAmt.innerHTML = '<span class="ship-fee-zero">0 元（' + (shipping || '現場取貨') + '免運）</span>';
+        freeShipTip.style.display = 'none';
+      } else if (shippingInfo.isFree) {
+        // 達到免運門檻
+        shippingFeeAmt.innerHTML = '<span class="ship-fee-original">' + shippingInfo.originalFee + ' 元</span><span class="ship-fee-zero">免運 🎉</span>';
+        freeShipTip.style.display = 'none';
+      } else {
+        // 未達免運門檻
+        shippingFeeAmt.innerText = shippingInfo.fee + ' 元';
+        if (shippingInfo.threshold > 0) {
+          const diff = shippingInfo.threshold - subtotal;
+          freeShipTip.innerText = '💡 再買 ' + diff + ' 元即可免運費';
+          freeShipTip.style.display = 'block';
+        } else {
+          freeShipTip.style.display = 'none';
+        }
+      }
+
+      // 強制匯款判斷(用最終總金額)
+      const forceThreshold = parseInt(settingsData['強制匯款門檻']) || 0;
       const cashItem = document.getElementById('pay_cash_item');
       const paymentHint = document.getElementById('paymentHint');
       const cashRadio = document.getElementById('pay_cash');
       const transferRadio = document.getElementById('pay_transfer');
 
-      const shouldForce = threshold > 0 && total >= threshold;
+      const shouldForce = forceThreshold > 0 && total >= forceThreshold;
 
       if (shouldForce) {
-        // 進入或維持強制匯款狀態
         cashItem.style.display = 'none';
         transferRadio.checked = true;
         paymentHint.style.display = 'block';
         wasForcedTransfer = true;
       } else {
-        // 解除強制狀態
         cashItem.style.display = 'flex';
         paymentHint.style.display = 'none';
-        // 只在「剛從強制狀態解除」的那一刻，才把選項重置回現場付款
-        // 如果客人本來就是自願選匯款，不要動他的選擇
         if (wasForcedTransfer) {
           cashRadio.checked = true;
           transferRadio.checked = false;
@@ -293,17 +342,24 @@
       methods.forEach(m => {
         container.innerHTML += `
           <div class="opt-item">
-            <input type="radio" name="shipping" value="${m}" id="ship_${m}" onchange="toggleAddress()" ${first ? 'checked' : ''}>
+            <input type="radio" name="shipping" value="${m}" id="ship_${m}" onchange="onShippingChange()" ${first ? 'checked' : ''}>
             <label for="ship_${m}" style="color:#333;font-weight:normal;margin:0">${m}</label>
           </div>`;
         first = false;
       });
       toggleAddress();
+      updateTotal();
+    }
+
+    // 切換運送方式時要重新計算運費
+    function onShippingChange() {
+      toggleAddress();
+      updateTotal();
     }
 
     function toggleAddress() {
       const sel = document.querySelector('input[name="shipping"]:checked');
-      const show = sel && (sel.value === '宅配' || sel.value === '超商');
+      const show = sel && (sel.value !== '現場取貨');
       document.getElementById('addressGroup').style.display = show ? 'block' : 'none';
     }
 
@@ -318,19 +374,24 @@
       const name = document.getElementById('name').value.trim();
       const tel = document.getElementById('tel').value.trim();
       if (!name) { alert('請填寫姓名'); return; }
-      if (!/^09\d{8}$/.test(tel)) { alert('手機號碼格式不正確，請輸入09開頭的10位數字'); return; }
+      if (!/^09\d{8}$/.test(tel)) { alert('手機號碼格式不正確,請輸入09開頭的10位數字'); return; }
       const items = getSelectedItems();
       if (items.length === 0) { alert('請至少選擇一項商品'); return; }
       const shipping = document.querySelector('input[name="shipping"]:checked')?.value || '';
       const payment = document.querySelector('input[name="payment"]:checked')?.value || '';
       const address = document.getElementById('address').value.trim();
-      if ((shipping === '宅配' || shipping === '超商') && !address) { alert('請填寫收件地址'); return; }
-      const total = items.reduce((s, i) => s + i.price * i.qty, 0);
+      if (shipping !== '現場取貨' && !address) { alert('請填寫收件地址'); return; }
+
+      const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
+      const shippingInfo = calcShippingFee(subtotal);
+      const total = subtotal + shippingInfo.fee;
 
       let html = `
         <div class="confirm-row"><span class="confirm-label">姓名</span><span>${name}</span></div>
         <div class="confirm-row"><span class="confirm-label">電話</span><span>${tel}</span></div>
         <div class="confirm-row"><span class="confirm-label">商品</span><span>${items.map(i => i.name + ' x' + i.qty).join('<br>')}</span></div>
+        <div class="confirm-row"><span class="confirm-label">商品小計</span><span>${subtotal} 元</span></div>
+        <div class="confirm-row"><span class="confirm-label">運費</span><span>${shippingInfo.fee === 0 ? '免運' : shippingInfo.fee + ' 元'}</span></div>
         <div class="confirm-row"><span class="confirm-label">總金額</span><span style="color:#D32F2F;font-weight:bold">${total} 元</span></div>
         <div class="confirm-row"><span class="confirm-label">付款方式</span><span>${payment}</span></div>
         <div class="confirm-row"><span class="confirm-label">運送方式</span><span>${shipping}</span></div>`;
@@ -355,7 +416,10 @@
       btn.disabled = true;
       btn.textContent = '傳送中...';
       const items = getSelectedItems();
-      const total = items.reduce((s, i) => s + i.price * i.qty, 0);
+      const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
+      const shippingInfo = calcShippingFee(subtotal);
+      const total = subtotal + shippingInfo.fee;
+
       let dynStr = '';
       fieldsData.forEach(f => {
         const v = f.type === 'text'
@@ -386,12 +450,12 @@
         const result = await res.json();
         if (result.status === 'OK') {
           const orderIdLine = result.orderId
-            ? `<p style="color:#333;font-weight:bold;font-size:16px">訂單編號：${result.orderId}</p>`
+            ? `<p style="color:#333;font-weight:bold;font-size:16px">訂單編號:${result.orderId}</p>`
             : '';
           document.getElementById('confirmPage').innerHTML = `
             <div style="text-align:center;padding:40px 20px">
               <div style="font-size:48px">✅</div>
-              <h3 style="color:#D32F2F">訂購成功！</h3>
+              <h3 style="color:#D32F2F">訂購成功!</h3>
               ${orderIdLine}
               <p style="color:#666">訂單確認訊息將透過 LINE 傳送給您<br>我們將盡快與您聯絡</p>
             </div>`;
@@ -400,7 +464,7 @@
           throw new Error(result.message || '未知錯誤');
         }
       } catch (e) {
-        alert('送出失敗：' + e.message);
+        alert('送出失敗:' + e.message);
         btn.disabled = false;
         btn.textContent = '確認並送出';
       }
